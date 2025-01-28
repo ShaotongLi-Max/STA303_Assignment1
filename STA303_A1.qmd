@@ -7,10 +7,7 @@ date: 2024/11/17
 date-format: long
 abstract: ""
 number-sections: true
-format:
-  pdf:
-    toc: true
-    template: default
+format: pdf
 ---
 
 ```{r}
@@ -19,28 +16,62 @@ format:
 #| message: false
 #| echo: false
 
+install.packages(c("ggplot2", "MASS", "dplyr"))
+
+library(ggplot2)  
+library(MASS)    
+library(dplyr)    
+
+
+# Load data
 load("portugal.RData")
 
+# Define family size
 portugal$family_size <- portugal$children + 2
 
-portugal$large_family <- ifelse(portugal$family_size > 5, 1, 0)
+# Ensure monthsSinceM is treated as a numeric variable
+portugal$monthsSinceM <- as.numeric(portugal$monthsSinceM)  
 
-logistic_model <- glm(
-  large_family ~ ageMarried + literacy,
+# Normal Regression Model (Gaussian)
+normal_model <- glm(
+  family_size ~ ageMarried + literacy + monthsSinceM,
   data = portugal,
-  family = binomial(link = "logit")  
+  family = gaussian(link = "identity") 
 )
 
-summary(logistic_model)
+# Define large family as binary variable
+portugal$large_family <- ifelse(portugal$family_size > 5, 1, 0)
 
+# Binomial Logistic Regression Model
+binomial_model <- glm(
+  large_family ~ ageMarried + literacy + monthsSinceM,
+  data = portugal,
+  family = binomial(link = "logit") 
+)
 
+# Poisson Regression Model
 poisson_model <- glm(
-  family_size ~ ageMarried + literacy,
+  family_size ~ ageMarried + literacy + monthsSinceM,
   data = portugal,
   family = poisson(link = "log")  
 )
 
-summary(poisson_model)
+# Gamma Regression Model
+gamma_model <- glm(
+  family_size ~ ageMarried + literacy + monthsSinceM,
+  data = portugal,
+  family = Gamma(link = "log") 
+)
+
+# Generate predictions for all models
+portugal <- portugal %>%
+  mutate(
+    pred_normal = predict(normal_model, type = "response"),
+    pred_binomial = predict(binomial_model, type = "response") * max(family_size),  
+    pred_poisson = predict(poisson_model, type = "response"),
+    pred_gamma = predict(gamma_model, type = "response")
+  )
+
 ```
 
 # Introduction
@@ -67,11 +98,160 @@ To address our research objective, the children variable was transformed to crea
 
 ## Generalized Linear Models
 
+### Normal Distribution Model
+
+```{=tex}
+\begin{equation}
+\text{Model 1 (Normal Regression): } \text{family\_size} = \beta_1 \cdot \text{ageMarried} + \beta_2 \cdot \text{literacy} + \beta_3 \cdot \text{monthsSinceM} + \beta_0
+\label{eq:normal_model}
+\end{equation}
+
+\noindent
+where:
+\begin{itemize}
+    \item $\text{ageMarried}$ is a categorical variable representing different marriage age groups.
+    \item $\text{literacy} \in \{\text{yes}, \text{no}\}$, indicating whether an individual is literate.
+    \item $\text{monthsSinceM} \in \mathbb{R}^{+}$ represents the number of months since marriage (a continuous variable).
+    \item $\beta_1$, $\beta_2$, and $\beta_3$ are the coefficients for the independent variables.
+    \item $\beta_0$ is the intercept term.
+    \item This model assumes $\text{family\_size}$ follows a normal distribution.
+\end{itemize}
+
+```
+### Binomial Distribution Model
+
+```{=tex}
+\begin{equation}
+\text{Model 2 (Binomial Regression): } \log \left( \frac{P(\text{large\_family} = 1)}{1 - P(\text{large\_family} = 1)} \right) = \beta_1 \cdot \text{ageMarried} + \beta_2 \cdot \text{literacy} + \beta_3 \cdot \text{monthsSinceM} + \beta_0
+\label{eq:binomial_model}
+\end{equation}
+
+\noindent
+where:
+\begin{itemize}
+    \item $\text{large\_family} \in \{0, 1\}$, where 1 indicates a family size greater than 5.
+    \item $\text{ageMarried}$ is a categorical variable representing different marriage age groups.
+    \item $\text{literacy} \in \{\text{yes}, \text{no}\}$, indicating whether an individual is literate.
+    \item $\text{monthsSinceM} \in \mathbb{R}^{+}$ represents the number of months since marriage (a continuous variable).
+    \item $\beta_1$, $\beta_2$, and $\beta_3$ are the coefficients for the independent variables.
+    \item $\beta_0$ is the intercept term.
+    \item The dependent variable follows a binomial distribution.
+    \item The logit function transforms probabilities into a linear function of the predictors.
+\end{itemize}
+
+```
+### Poisson Distribution Model
+
+```{=tex}
+\begin{equation}
+\text{Model 3 (Poisson Regression): } \log(\mu) = \beta_1 \cdot \text{ageMarried} + \beta_2 \cdot \text{literacy} + \beta_3 \cdot \text{monthsSinceM} + \beta_0
+\label{eq:poisson_model}
+\end{equation}
+
+\noindent
+where:
+\begin{itemize}
+    \item $\mu = E(\text{family\_size})$ represents the expected family size.
+    \item $\text{ageMarried}$ is a categorical variable representing different marriage age groups.
+    \item $\text{literacy} \in \{\text{yes}, \text{no}\}$, indicating whether an individual is literate.
+    \item $\text{monthsSinceM} \in \mathbb{R}^{+}$ represents the number of months since marriage (a continuous variable).
+    \item $\beta_1$, $\beta_2$, and $\beta_3$ are the coefficients for the independent variables.
+    \item $\beta_0$ is the intercept term.
+    \item This model assumes $\text{family\_size}$ follows a Poisson distribution.
+    \item The log-link function ensures positive expected values.
+\end{itemize}
+
+```
+### Gamma Distribution Model
+
+```{=tex}
+\begin{equation}
+\text{Model 4 (Gamma Regression): } \log(\mu) = \beta_1 \cdot \text{ageMarried} + \beta_2 \cdot \text{literacy} + \beta_3 \cdot \text{monthsSinceM} + \beta_0
+\label{eq:gamma_model}
+\end{equation}
+
+\noindent
+where:
+\begin{itemize}
+    \item $\mu = E(\text{family\_size})$ represents the expected family size.
+    \item $\text{ageMarried}$ is a categorical variable representing different marriage age groups.
+    \item $\text{literacy} \in \{\text{yes}, \text{no}\}$, indicating whether an individual is literate.
+    \item $\text{monthsSinceM} \in \mathbb{R}^{+}$ represents the number of months since marriage (a continuous variable).
+    \item $\beta_1$, $\beta_2$, and $\beta_3$ are the coefficients for the independent variables.
+    \item $\beta_0$ is the intercept term.
+    \item This model assumes $\text{family\_size}$ follows a Gamma distribution.
+    \item The log-link function ensures positive expected values.
+\end{itemize}
+
+```
 # Result
 
+## Normal Distribution Model
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.pos="H"}
+
+plot_normal <- ggplot() +
+  geom_density(aes(x = portugal$family_size, color = "Actual"), size = 1.2) +
+  geom_density(aes(x = portugal$pred_normal, color = "Predicted"), size = 1.2) +
+  labs(title = "Normal Regression: Prediction vs Actual",
+       x = "Family Size",
+       y = "Density",
+       color = "Legend") +
+  theme_minimal()
+
+print(plot_normal)
+
+```
+
+## Binomial Distribution Model
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.pos="H"}
+plot_binomial <- ggplot() +
+  geom_density(aes(x = portugal$family_size, color = "Actual"), size = 1.2) +
+  geom_density(aes(x = portugal$pred_binomial, color = "Predicted"), size = 1.2) +
+  labs(title = "Binomial Regression: Prediction vs Actual",
+       x = "Family Size",
+       y = "Density",
+       color = "Legend") +
+  theme_minimal()
+
+print(plot_binomial)
+
+```
+
+## Poisson Distribution Model
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.pos="H"}
+
+plot_poisson <- ggplot() +
+  geom_density(aes(x = portugal$family_size, color = "Actual"), size = 1.2) +
+  geom_density(aes(x = portugal$pred_poisson, color = "Predicted"), size = 1.2) +
+  labs(title = "Poisson Regression: Prediction vs Actual",
+       x = "Family Size",
+       y = "Density",
+       color = "Legend") +
+  theme_minimal()
+
+print(plot_poisson)
+
+```
+
+## Gamma Distribution Model
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.pos="H"}
+
+plot_gamma <- ggplot() +
+  geom_density(aes(x = portugal$family_size, color = "Actual"), size = 1.2) +
+  geom_density(aes(x = portugal$pred_gamma, color = "Predicted"), size = 1.2) +
+  labs(title = "Gamma Regression: Prediction vs Actual",
+       x = "Family Size",
+       y = "Density",
+       color = "Legend") +
+  theme_minimal()
+
+print(plot_gamma)
+
+
+```
+
 # Conclusion
-
-
-
-
-
