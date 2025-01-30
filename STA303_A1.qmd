@@ -16,11 +16,13 @@ format: pdf
 #| message: false
 #| echo: false
 
-install.packages(c("ggplot2", "MASS", "dplyr"))
+install.packages(c("ggplot2", "MASS", "dplyr","survival","kableExtra"))
 
 library(ggplot2)  
 library(MASS)    
 library(dplyr)    
+library(survival)
+library(kableExtra)
 
 
 # Load data
@@ -32,55 +34,36 @@ portugal$family_size <- portugal$children + 2
 # Ensure monthsSinceM is treated as a numeric variable
 portugal$monthsSinceM <- as.numeric(portugal$monthsSinceM)  
 
-# Normal Regression Model (Gaussian)
-normal_model <- glm(
-  family_size ~ ageMarried + literacy + monthsSinceM,
-  data = portugal,
-  family = gaussian(link = "identity") 
-)
-
-# Define large family as binary variable
-portugal$large_family <- ifelse(portugal$family_size > 5, 1, 0)
-
-# Binomial Logistic Regression Model
-binomial_model <- glm(
-  large_family ~ ageMarried + literacy + monthsSinceM,
-  data = portugal,
-  family = binomial(link = "logit") 
-)
-
-# Poisson Regression Model
-poisson_model <- glm(
-  family_size ~ ageMarried + literacy + monthsSinceM,
-  data = portugal,
-  family = poisson(link = "log")  
-)
-
 # Gamma Regression Model
 gamma_model <- glm(
-  family_size ~ ageMarried + literacy + monthsSinceM,
+  family_size ~ literacy + monthsSinceM,
   data = portugal,
   family = Gamma(link = "log") 
+)
+
+# Fit a Weibull Regression Model
+weibull_model <- survreg(Surv(family_size) ~ literacy + monthsSinceM, 
+                         data = portugal, 
+                         dist = "weibull")
+
+# Fit Poisson Regression Model
+poisson_model <- glm(
+  family_size ~ literacy + monthsSinceM,
+  data = portugal,
+  family = poisson(link = "log")
 )
 
 # Generate predictions for all models
 portugal <- portugal %>%
   mutate(
-    pred_normal = predict(normal_model, type = "response"),
-    pred_binomial = predict(binomial_model, type = "response") * max(family_size),  
-    pred_poisson = predict(poisson_model, type = "response"),
-    pred_gamma = predict(gamma_model, type = "response")
+    pred_weibull = predict(weibull_model, type = "response"),
+    pred_gamma = predict(gamma_model, type = "response"),
+    pred_poisson <- predict(poisson_model, type = "response")
   )
 
 ```
 
 # Introduction
-
-Understanding the factors influencing family size is of paramount importance in demographic research, as family size has significant implications for economic development, resource allocation, and population growth. In rural areas, where socioeconomic conditions often shape family dynamics, investigating the determinants of family size is especially relevant. Portugal in the late 20th century, characterized by pronounced economic disparities and relatively low levels of education, provides an intriguing context for studying these dynamics. Rural Portugal, in particular, exhibited distinct family patterns shaped by varying levels of literacy and cultural norms surrounding marriage, making it an ideal setting to explore these relationships.
-
-Education is widely recognized as a key determinant of family size, operating through both direct and indirect pathways. Studies have demonstrated that higher levels of education are strongly correlated with smaller family sizes, as education expands access to information about family planning, increases participation in the labor force, and delays the timing of marriage. The impact of education on family size is nuanced: while the direct effects are more evident at lower levels of education, indirect effects, such as those mediated through labor force participation and age at marriage, become increasingly significant at higher education levels, particularly for women. Furthermore, these effects are often asymmetrical between genders, with the wife’s education playing a more dominant role in shaping family outcomes than the husband’s education.
-
-The complex interplay between literacy, age at marriage, and family size highlights the need for targeted statistical analysis to disentangle these relationships. Using data from a fertility survey conducted in rural Portugal in 1979, this study aims to model the effects of literacy and marriage age on family size through the application of generalized linear models (GLMs). This approach not only facilitates the estimation of direct effects but also enables the identification of additional variation in birth rates after accounting for known explanatory variables. The findings from this study will contribute to the broader understanding of demographic behavior in rural settings and provide insights into the socioeconomic determinants of family size that remain relevant for contemporary policy planning.
 
 # Methods
 
@@ -98,142 +81,22 @@ To address our research objective, the children variable was transformed to crea
 
 ## Generalized Linear Models
 
-### Normal Distribution Model
-
-```{=tex}
-\begin{equation}
-\text{Model 1 (Normal Regression): } \text{family\_size} = \beta_1 \cdot \text{ageMarried} + \beta_2 \cdot \text{literacy} + \beta_3 \cdot \text{monthsSinceM} + \beta_0
-\label{eq:normal_model}
-\end{equation}
-
-\noindent
-where:
-\begin{itemize}
-    \item $\text{ageMarried}$ is a categorical variable representing different marriage age groups.
-    \item $\text{literacy} \in \{\text{yes}, \text{no}\}$, indicating whether an individual is literate.
-    \item $\text{monthsSinceM} \in \mathbb{R}^{+}$ represents the number of months since marriage (a continuous variable).
-    \item $\beta_1$, $\beta_2$, and $\beta_3$ are the coefficients for the independent variables.
-    \item $\beta_0$ is the intercept term.
-    \item This model assumes $\text{family\_size}$ follows a normal distribution.
-\end{itemize}
-
-```
-### Binomial Distribution Model
-
-```{=tex}
-\begin{equation}
-\text{Model 2 (Binomial Regression): } \log \left( \frac{P(\text{large\_family} = 1)}{1 - P(\text{large\_family} = 1)} \right) = \beta_1 \cdot \text{ageMarried} + \beta_2 \cdot \text{literacy} + \beta_3 \cdot \text{monthsSinceM} + \beta_0
-\label{eq:binomial_model}
-\end{equation}
-
-\noindent
-where:
-\begin{itemize}
-    \item $\text{large\_family} \in \{0, 1\}$, where 1 indicates a family size greater than 5.
-    \item $\text{ageMarried}$ is a categorical variable representing different marriage age groups.
-    \item $\text{literacy} \in \{\text{yes}, \text{no}\}$, indicating whether an individual is literate.
-    \item $\text{monthsSinceM} \in \mathbb{R}^{+}$ represents the number of months since marriage (a continuous variable).
-    \item $\beta_1$, $\beta_2$, and $\beta_3$ are the coefficients for the independent variables.
-    \item $\beta_0$ is the intercept term.
-    \item The dependent variable follows a binomial distribution.
-    \item The logit function transforms probabilities into a linear function of the predictors.
-\end{itemize}
-
-```
-### Poisson Distribution Model
-
-```{=tex}
-\begin{equation}
-\text{Model 3 (Poisson Regression): } \log(\mu) = \beta_1 \cdot \text{ageMarried} + \beta_2 \cdot \text{literacy} + \beta_3 \cdot \text{monthsSinceM} + \beta_0
-\label{eq:poisson_model}
-\end{equation}
-
-\noindent
-where:
-\begin{itemize}
-    \item $\mu = E(\text{family\_size})$ represents the expected family size.
-    \item $\text{ageMarried}$ is a categorical variable representing different marriage age groups.
-    \item $\text{literacy} \in \{\text{yes}, \text{no}\}$, indicating whether an individual is literate.
-    \item $\text{monthsSinceM} \in \mathbb{R}^{+}$ represents the number of months since marriage (a continuous variable).
-    \item $\beta_1$, $\beta_2$, and $\beta_3$ are the coefficients for the independent variables.
-    \item $\beta_0$ is the intercept term.
-    \item This model assumes $\text{family\_size}$ follows a Poisson distribution.
-    \item The log-link function ensures positive expected values.
-\end{itemize}
-
-```
-### Gamma Distribution Model
-
-```{=tex}
-\begin{equation}
-\text{Model 4 (Gamma Regression): } \log(\mu) = \beta_1 \cdot \text{ageMarried} + \beta_2 \cdot \text{literacy} + \beta_3 \cdot \text{monthsSinceM} + \beta_0
-\label{eq:gamma_model}
-\end{equation}
-
-\noindent
-where:
-\begin{itemize}
-    \item $\mu = E(\text{family\_size})$ represents the expected family size.
-    \item $\text{ageMarried}$ is a categorical variable representing different marriage age groups.
-    \item $\text{literacy} \in \{\text{yes}, \text{no}\}$, indicating whether an individual is literate.
-    \item $\text{monthsSinceM} \in \mathbb{R}^{+}$ represents the number of months since marriage (a continuous variable).
-    \item $\beta_1$, $\beta_2$, and $\beta_3$ are the coefficients for the independent variables.
-    \item $\beta_0$ is the intercept term.
-    \item This model assumes $\text{family\_size}$ follows a Gamma distribution.
-    \item The log-link function ensures positive expected values.
-\end{itemize}
-
-```
 # Result
 
-## Normal Distribution Model
+## Weibull Distribution Model
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.pos="H"}
-
-plot_normal <- ggplot() +
+plot_weibull <- ggplot() +
   geom_density(aes(x = portugal$family_size, color = "Actual"), size = 1.2) +
-  geom_density(aes(x = portugal$pred_normal, color = "Predicted"), size = 1.2) +
-  labs(title = "Normal Regression: Prediction vs Actual",
+  geom_density(aes(x = portugal$pred_weibull, color = "Predicted"), size = 1.2) +
+  labs(title = "Weibull Regression: Prediction vs Actual",
        x = "Family Size",
        y = "Density",
        color = "Legend") +
   theme_minimal()
 
-print(plot_normal)
-
-```
-
-## Binomial Distribution Model
-
-```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.pos="H"}
-plot_binomial <- ggplot() +
-  geom_density(aes(x = portugal$family_size, color = "Actual"), size = 1.2) +
-  geom_density(aes(x = portugal$pred_binomial, color = "Predicted"), size = 1.2) +
-  labs(title = "Binomial Regression: Prediction vs Actual",
-       x = "Family Size",
-       y = "Density",
-       color = "Legend") +
-  theme_minimal()
-
-print(plot_binomial)
-
-```
-
-## Poisson Distribution Model
-
-```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.pos="H"}
-
-plot_poisson <- ggplot() +
-  geom_density(aes(x = portugal$family_size, color = "Actual"), size = 1.2) +
-  geom_density(aes(x = portugal$pred_poisson, color = "Predicted"), size = 1.2) +
-  labs(title = "Poisson Regression: Prediction vs Actual",
-       x = "Family Size",
-       y = "Density",
-       color = "Legend") +
-  theme_minimal()
-
-print(plot_poisson)
-
+# Print the plot
+print(plot_weibull)
 ```
 
 ## Gamma Distribution Model
@@ -254,4 +117,68 @@ print(plot_gamma)
 
 ```
 
-# Conclusion
+## Poisson Distribution Model
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.pos="H"}
+# Plot Poisson Model Prediction vs Actual
+plot_poisson <- ggplot() +
+  geom_density(aes(x = portugal$family_size, color = "Actual"), size = 1.2) +
+  geom_density(aes(x = portugal$pred_poisson, color = "Predicted"), size = 1.2) +
+  labs(title = "Poisson Regression: Prediction vs Actual",
+       x = "Family Size",
+       y = "Density",
+       color = "Legend") +
+  theme_minimal()
+
+# Print the plot
+print(plot_poisson)
+
+```
+
+## Compare
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Compute RMSE for each model
+poisson_rmse <- sqrt(mean((portugal$family_size - predict(poisson_model, type = "response"))^2))
+gamma_rmse <- sqrt(mean((portugal$family_size - predict(gamma_model, type = "response"))^2))
+weibull_rmse <- sqrt(mean((portugal$family_size - predict(weibull_model, type = "response"))^2))
+
+# Create comparison table
+model_comparison <- data.frame(
+  Model = c("Poisson", "Gamma", "Weibull"),
+  AIC = c(AIC(poisson_model), AIC(gamma_model), AIC(weibull_model)),
+  BIC = c(BIC(poisson_model), BIC(gamma_model), BIC(weibull_model)),
+  Log_Likelihood = c(logLik(poisson_model), logLik(gamma_model), logLik(weibull_model)),
+  RMSE = c(poisson_rmse, gamma_rmse, weibull_rmse)
+)
+
+# Print the comparison table
+print(model_comparison)
+
+```
+
+## Overdispersion
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Compute mean and variance of family_size
+mean_family_size <- mean(portugal$family_size)
+var_family_size <- var(portugal$family_size)
+
+print(c(Mean_Family_Size = mean_family_size, Variance_Family_Size = var_family_size))
+
+# Compute dispersion parameter for Gamma Model
+gamma_dispersion <- sum(residuals(gamma_model, type = "pearson")^2) / gamma_model$df.residual
+
+print(c(Gamma_Dispersion = gamma_dispersion))
+
+# Plot residuals to check variance consistency
+plot(residuals(gamma_model, type = "pearson"), main = "Gamma Model Residuals", ylab = "Pearson Residuals", xlab = "Index", col = "blue", pch = 16)
+abline(h = 0, col = "red", lwd = 2)
+
+```
+
+##  Interpret
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+summary(gamma_model)
+```
