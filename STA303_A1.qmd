@@ -16,14 +16,17 @@ format: pdf
 #| message: false
 #| echo: false
 
-install.packages(c("ggplot2", "MASS", "dplyr","survival","kableExtra"))
+install.packages(c("ggplot2", "MASS", "dplyr","survival","kableExtra","patchwork","knitr","car","ggpubr"))
 
 library(ggplot2)  
 library(MASS)    
 library(dplyr)    
 library(survival)
 library(kableExtra)
-
+library(patchwork)
+library(knitr)
+library(car)
+library(ggpubr)
 
 # Load data
 load("portugal.RData")
@@ -81,11 +84,8 @@ To address our research objective, the children variable was transformed to crea
 
 ## Generalized Linear Models
 
-# Result
-
-## Weibull Distribution Model
-
 ```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.pos="H"}
+
 plot_weibull <- ggplot() +
   geom_density(aes(x = portugal$family_size, color = "Actual"), size = 1.2) +
   geom_density(aes(x = portugal$pred_weibull, color = "Predicted"), size = 1.2) +
@@ -94,14 +94,6 @@ plot_weibull <- ggplot() +
        y = "Density",
        color = "Legend") +
   theme_minimal()
-
-# Print the plot
-print(plot_weibull)
-```
-
-## Gamma Distribution Model
-
-```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.pos="H"}
 
 plot_gamma <- ggplot() +
   geom_density(aes(x = portugal$family_size, color = "Actual"), size = 1.2) +
@@ -112,15 +104,6 @@ plot_gamma <- ggplot() +
        color = "Legend") +
   theme_minimal()
 
-print(plot_gamma)
-
-
-```
-
-## Poisson Distribution Model
-
-```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.pos="H"}
-# Plot Poisson Model Prediction vs Actual
 plot_poisson <- ggplot() +
   geom_density(aes(x = portugal$family_size, color = "Actual"), size = 1.2) +
   geom_density(aes(x = portugal$pred_poisson, color = "Predicted"), size = 1.2) +
@@ -130,20 +113,20 @@ plot_poisson <- ggplot() +
        color = "Legend") +
   theme_minimal()
 
-# Print the plot
-print(plot_poisson)
+combined_plot <- (plot_weibull / plot_gamma / plot_poisson) +
+  plot_layout(ncol = 1, heights = c(10, 10, 10)) 
+
+print(combined_plot)
 
 ```
 
 ## Compare
 
-```{r, echo=FALSE, message=FALSE, warning=FALSE}
-# Compute RMSE for each model
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.pos="H"}
 poisson_rmse <- sqrt(mean((portugal$family_size - predict(poisson_model, type = "response"))^2))
 gamma_rmse <- sqrt(mean((portugal$family_size - predict(gamma_model, type = "response"))^2))
 weibull_rmse <- sqrt(mean((portugal$family_size - predict(weibull_model, type = "response"))^2))
 
-# Create comparison table
 model_comparison <- data.frame(
   Model = c("Poisson", "Gamma", "Weibull"),
   AIC = c(AIC(poisson_model), AIC(gamma_model), AIC(weibull_model)),
@@ -152,33 +135,117 @@ model_comparison <- data.frame(
   RMSE = c(poisson_rmse, gamma_rmse, weibull_rmse)
 )
 
-# Print the comparison table
-print(model_comparison)
+kable(model_comparison, format = "latex",digits = 3, align = "c") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = F) %>%
+  column_spec(1, bold = TRUE, color = "white", background = "#0073C2") %>%
+  column_spec(2:5, background = "#F2F2F2") %>%
+  add_header_above(c("Model Comparison" = 5)) %>%
+  footnote(general = "AIC, BIC, Log-Likelihood, and RMSE for different regression models.")
+```
+
+# Result
+
+## Generalized Gamma Linear Model
+```{=tex}
+\begin{equation}
+\text{Gamma GLM: } \mathbb{E}[Y \mid X_1, X_2] = \exp(\beta_0 + \beta_1 \cdot X_1 + \beta_2 \cdot X_2)
+\label{eq:gamma_glm}
+\end{equation}
+
+\noindent
+where:
+\begin{itemize}
+    \item $Y$ is the response variable, following a Gamma distribution.
+    \item $X_1$ and $X_2$ are predictor variables.
+    \item $\beta_1$ and $\beta_2$ are the coefficients associated with $X_1$ and $X_2$.
+    \item $\beta_0$ is the intercept term.
+\end{itemize}
+
+\begin{equation}
+\text{Link Function: } g(\mathbb{E}[Y]) = \log(\mathbb{E}[Y])
+\label{eq:log_link}
+\end{equation}
+
+\noindent
+where:
+\begin{itemize}
+    \item The log link function ensures $\mathbb{E}[Y] > 0$.
+    \item The linear predictor is given by $\eta = \beta_0 + \beta_1 X_1 + \beta_2 X_2$.
+    \item The expectation of $Y$ is modeled as $\mathbb{E}[Y] = \exp(\eta)$.
+\end{itemize}
+```
+## Model Summary and Overdispersion
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.pos="H"}
+portugal$residuals <- residuals(gamma_model, type = "pearson")
+portugal$fitted <- fitted(gamma_model)
+
+p1 <- ggplot(portugal, aes(x = literacy, y = residuals)) +
+  geom_boxplot(fill = "#0073C2", alpha = 0.5) +
+  labs(title = "Residuals by Literacy",
+       x = "Literacy",
+       y = "Pearson Residuals") +
+  theme_minimal()
+
+p2 <- ggplot(portugal, aes(x = monthsSinceM, y = residuals)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "loess", color = "#0073C2", se = FALSE) +
+  labs(title = "Residuals by Months Since Marriage",
+       x = "Months Since Marriage",
+       y = "Pearson Residuals") +
+  theme_minimal()
+
+p3 <- ggplot(portugal, aes(x = fitted, y = residuals)) +
+  geom_point(alpha = 0.4) +
+  geom_smooth(method = "loess", color = "#0073C2", se = FALSE) +
+  labs(title = "Residuals by Linear Predictor",
+       x = "Linear Predictor",
+       y = "Pearson Residuals") +
+  theme_minimal()
+
+ggarrange(p1, p2, p3, 
+          ncol = 1, nrow = 3, 
+          common.legend = TRUE)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.pos="H"}
+gamma_summary <- summary(gamma_model)
+
+coefficients_table <- as.data.frame(gamma_summary$coefficients)
+colnames(coefficients_table) <- c("Estimate", "Std. Error", "t value", "Pr(>|t|)")
+coefficients_table <- cbind(Variable = rownames(coefficients_table), coefficients_table)
+
+coefficients_table$`Pr(>|t|)` <- ifelse(coefficients_table$`Pr(>|t|)` < 2.2e-16, "< 2.2e-16", format(coefficients_table$`Pr(>|t|)`, scientific = TRUE, digits = 2))
+
+dispersion_param <- gamma_summary$dispersion
+null_deviance <- gamma_summary$null.deviance
+residual_deviance <- gamma_summary$deviance
+df_null <- gamma_summary$df.null
+df_residual <- gamma_summary$df.residual
+
+deviance_table <- data.frame(
+  Variable = c("Dispersion Parameter", "Null Deviance", "Residual Deviance", "Null DF", "Residual DF"),
+  Estimate = c(dispersion_param, null_deviance, residual_deviance, df_null, df_residual),
+  `Std. Error` = "", `t value` = "", `Pr(>|t|)` = "",
+  stringsAsFactors = FALSE
+)
+
+coefficients_table[, 2:4] <- lapply(coefficients_table[, 2:4], function(x) format(x, digits = 3, scientific = FALSE))
+deviance_table[, 2] <- format(deviance_table[, 2], digits = 3, scientific = FALSE)
+
+colnames(deviance_table) <- colnames(coefficients_table)
+
+final_table <- rbind(coefficients_table, deviance_table)
+rownames(final_table) <- NULL  
+
+kbl(final_table, format = "latex", escape = FALSE, booktabs = TRUE, align = "c") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = F, latex_options = "scale_down", position = "center") %>%
+  column_spec(1, bold = TRUE, color = "white", background = "#0073C2") %>%
+  column_spec(2:5, background = "#F2F2F2") %>%
+  add_header_above(c("Gamma Model Summary" = 5)) %>%
+  footnote(general = "Coefficient estimates, standard errors, t-values, significance levels, and dispersion metrics for the Gamma model.")
 
 ```
 
-## Overdispersion
-
-```{r, echo=FALSE, message=FALSE, warning=FALSE}
-# Compute mean and variance of family_size
-mean_family_size <- mean(portugal$family_size)
-var_family_size <- var(portugal$family_size)
-
-print(c(Mean_Family_Size = mean_family_size, Variance_Family_Size = var_family_size))
-
-# Compute dispersion parameter for Gamma Model
-gamma_dispersion <- sum(residuals(gamma_model, type = "pearson")^2) / gamma_model$df.residual
-
-print(c(Gamma_Dispersion = gamma_dispersion))
-
-# Plot residuals to check variance consistency
-plot(residuals(gamma_model, type = "pearson"), main = "Gamma Model Residuals", ylab = "Pearson Residuals", xlab = "Index", col = "blue", pch = 16)
-abline(h = 0, col = "red", lwd = 2)
-
-```
-
-##  Interpret
-
-```{r, echo=FALSE, message=FALSE, warning=FALSE}
-summary(gamma_model)
-```
